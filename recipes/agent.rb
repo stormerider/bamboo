@@ -37,21 +37,21 @@ end
 directory node[:bamboo][:agent][:home_dir] do
   owner   node[:bamboo][:agent][:user]
   group   node[:bamboo][:agent][:group]
-  mode 0775
+  mode '0775'
   action :create
 end
 
 directory node[:bamboo][:agent][:data_dir] do
   owner   node[:bamboo][:agent][:user]
   group   node[:bamboo][:agent][:group]
-  mode 0775
+  mode '0775'
   action :create
 end
 
 # Download and install the bamboo package
 remote_file "#{node[:bamboo][:agent][:home_dir]}/atlassian-bamboo-agent-installer.jar" do
   source "#{node[:bamboo][:url]}/agentServer/agentInstaller/atlassian-bamboo-agent-installer-#{node[:bamboo][:version]}.jar"
-  mode 0644
+  mode '0644'
   owner  node[:bamboo][:agent][:user]
   group  node[:bamboo][:agent][:group]
   not_if { ::File.exist?("#{node[:bamboo][:agent][:home_dir]}/atlassian-bamboo-agent-installer.jar") }
@@ -69,12 +69,25 @@ template 'bamboo-agent.sh' do
   source 'bamboo-agent.sh.erb'
   owner  node[:bamboo][:agent][:user]
   group  node[:bamboo][:agent][:group]
-  mode   0755
+  mode   '0755'
   notifies :restart, 'service[bamboo-agent]', :delayed
 end
 
 link '/etc/init.d/bamboo-agent' do
   to "#{node[:bamboo][:agent][:data_dir]}/bin/bamboo-agent.sh"
+  not_if { node[:platform_family] == 'mac_os_x' }
+end
+
+template '/Library/LaunchDaemons/bamboo-agent.plist' do
+  source 'bamboo-agent.plist.erb'
+  owner 'root'
+  group 'wheel'
+  mode '0644'
+  variables(
+    :username => node[:bamboo][:agent][:user],
+    :data_dir => node[:bamboo][:agent][:data_dir]
+  )
+  only_if { node[:platform_family] == 'mac_os_x' }
 end
 
 capabilities = node[:bamboo][:agent_capabilities]
@@ -83,7 +96,7 @@ template 'bamboo-capabilities.properties' do
   source 'bamboo-capabilities.properties.erb'
   owner  node[:bamboo][:agent][:user]
   group  node[:bamboo][:agent][:group]
-  mode 0644
+  mode '0644'
   variables(
     :options => capabilities
   )
@@ -93,24 +106,28 @@ end
 # Create and enable service
 service 'bamboo-agent' do
   supports :restart => true, :status => true, :start => true, :stop => true
+  provider Chef::Provider::Service::Macosx if node[:platform_family] == 'mac_os_x'
   action [:enable, :start]
 end
 
 # Setup monit
 package 'monit' do
   action :install
+  not_if { node[:platform_family] == 'mac_os_x' }
 end
 
 template 'procfile.monitrc' do
   path   '/etc/monit/conf.d/bamboo-agent.conf'
   owner  'root'
   group  'root'
-  mode 0644
-  notifies :restart, 'service[monit]', :delayed
+  mode '0644'
+  notifies :restart, 'service[monit]', :delayed unless node[:platform_family] == 'mac_os_x'
+  not_if { node[:platform_family] == 'mac_os_x' }
 end
 
 # Create and enable service
 service 'monit' do
   supports :restart => true, :status => true, :start => true, :stop => true
   action [:enable, :start]
+  not_if { node[:platform_family] == 'mac_os_x' }
 end
